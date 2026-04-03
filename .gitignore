@@ -1,0 +1,26 @@
+# Secrets
+.env
+
+# Data (don't commit documents or vectors)
+data/uploads/*
+data/vectorstore/*
+!data/uploads/.gitkeep
+!data/vectorstore/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,98 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: hybridrag_ollama
+    ports:
+      - 11434:11434
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 30s
+      retries: 10
+      start_period: 30s
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: hybridrag_ollama_init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ollama_data:/root/.ollama
+    entrypoint: ["/bin/sh", "-c", "ollama pull phi3:mini && ollama pull nomic-embed-text"]
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    restart: "no"
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: hybridrag_chromadb
+    ports:
+      - 8001:8000
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER=chromadb.auth.token.TokenConfigServerAuthCredentialsProvider
+      - CHROMA_SERVER_AUTH_PROVIDER=chromadb.auth.token.TokenAuthServerProvider
+      - CHROMA_AUTH_TOKEN_TRANSPORT_HEADER=AUTHORIZATION
+      - CHROMA_SERVER_AUTH_CREDENTIALS=hybridrag-secret
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo x > /dev/tcp/localhost/8000"]
+      interval: 15s
+      timeout: 30s
+      retries: 10
+      start_period: 30s
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hybridrag_backend
+    ports:
+      - 8000:8000
+    depends_on:
+      ollama:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    volumes:
+      - ./data/uploads:/app/data/uploads
+      - ./data/vectorstore:/app/data/vs
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - CHROMA_TOKEN=hybridrag-secret
+      - OPENAI_API_KEY=
+      - DEFAULT_LOCAL_MODEL=phi3:mini
+      - DEFAULT_EMBED_MODEL=nomic-embed-text
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo x > /dev/tcp/localhost/8000"]
+      interval: 15s
+      timeout: 30s
+      retries: 10
+      start_period: 60s
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hybridrag_frontend
+    ports:
+      - 3000:80
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    restart: unless-stopped
+volumes:
+  ollama_data:
+  chroma_data:
+networks:
+  default:
+    name: hybridrag_net
