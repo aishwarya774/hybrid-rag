@@ -61,6 +61,52 @@ const Icon = {
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
     </svg>
   ),
+  NewChat: () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+  ),
+  History: () => (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+    </svg>
+  ),
+  Model: () => (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>
+    </svg>
+  ),
+};
+
+// ── Chat History Helpers ────────────────────────────────────
+const HISTORY_KEY = "hybridrag_chat_sessions";
+const CURRENT_KEY = "hybridrag_current_session";
+
+function loadSessions() {
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+  } catch { return []; }
+}
+
+function saveSessions(sessions) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(sessions));
+}
+
+function loadCurrentId() {
+  return localStorage.getItem(CURRENT_KEY) || null;
+}
+
+function saveCurrentId(id) {
+  localStorage.setItem(CURRENT_KEY, id);
+}
+
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+const WELCOME_MSG = {
+  role: "assistant",
+  content: "Hello! I'm your Hybrid RAG assistant.\n\nUpload documents on the left, then ask me anything about them. I'll automatically choose between local Ollama models and OpenAI based on your query — or you can force a provider below.",
 };
 
 // ── Provider Badge ───────────────────────────────────────────
@@ -185,7 +231,7 @@ function Message({ msg }) {
 }
 
 // ── Document Sidebar ─────────────────────────────────────────
-function DocSidebar({ docs, onUpload, onDelete, uploading }) {
+function DocSidebar({ docs, onUpload, onDelete, uploading, sessions, currentSessionId, onNewChat, onSwitchSession }) {
   const onDrop = useCallback(acceptedFiles => {
     acceptedFiles.forEach(f => onUpload(f));
   }, [onUpload]);
@@ -198,6 +244,8 @@ function DocSidebar({ docs, onUpload, onDelete, uploading }) {
 
   const typeColor = { PDF: "#f87171", DOCX: "#60a5fa", TXT: "#a78bfa", MD: "#34d399" };
 
+  const [showHistory, setShowHistory] = useState(false);
+
   return (
     <div style={{
       width: "260px", flexShrink: 0,
@@ -206,6 +254,64 @@ function DocSidebar({ docs, onUpload, onDelete, uploading }) {
       display: "flex", flexDirection: "column",
       overflow: "hidden",
     }}>
+      {/* New Chat + History Toggle */}
+      <div style={{ padding: "12px 12px 0", display: "flex", gap: "6px" }}>
+        <button onClick={onNewChat} style={{
+          flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+          padding: "8px", borderRadius: "8px", border: "1px solid rgba(99,102,241,0.3)",
+          background: "rgba(99,102,241,0.1)", color: "#818cf8", cursor: "pointer",
+          fontSize: "11px", fontWeight: "600", letterSpacing: "0.3px",
+          transition: "all 0.15s",
+        }}>
+          <Icon.NewChat /> New Chat
+        </button>
+        <button onClick={() => setShowHistory(!showHistory)} style={{
+          padding: "8px 10px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.08)",
+          background: showHistory ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.04)",
+          color: showHistory ? "#818cf8" : "#6b7280", cursor: "pointer",
+          display: "flex", alignItems: "center",
+          transition: "all 0.15s",
+        }}>
+          <Icon.History />
+        </button>
+      </div>
+
+      {/* Chat History Panel */}
+      {showHistory && (
+        <div style={{
+          padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.05)",
+          maxHeight: "180px", overflowY: "auto",
+        }}>
+          <div style={{ fontSize: "10px", letterSpacing: "1.5px", color: "#4b5563", marginBottom: "6px" }}>
+            RECENT CHATS
+          </div>
+          {sessions.length === 0 ? (
+            <div style={{ fontSize: "11px", color: "#374151", textAlign: "center", padding: "8px 0" }}>
+              No saved chats
+            </div>
+          ) : sessions.slice().reverse().map(s => (
+            <div
+              key={s.id}
+              onClick={() => { onSwitchSession(s.id); setShowHistory(false); }}
+              style={{
+                padding: "6px 8px", borderRadius: "6px", cursor: "pointer",
+                marginBottom: "3px", fontSize: "12px",
+                background: s.id === currentSessionId ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.02)",
+                border: s.id === currentSessionId ? "1px solid rgba(99,102,241,0.3)" : "1px solid transparent",
+                color: s.id === currentSessionId ? "#818cf8" : "#9ca3af",
+                transition: "all 0.15s",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}
+            >
+              {s.title || "Untitled chat"}
+              <div style={{ fontSize: "9px", color: "#4b5563", marginTop: "2px" }}>
+                {new Date(s.updatedAt).toLocaleDateString()} · {s.messages.length} msgs
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div style={{ padding: "20px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
         <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#4b5563", marginBottom: "12px" }}>
           KNOWLEDGE BASE
@@ -341,27 +447,157 @@ function ProviderSelector({ value, onChange }) {
   );
 }
 
+// ── Model Selector Dropdown ─────────────────────────────────
+function ModelSelector({ models, selectedModel, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const allModels = [
+    ...(models.ollama_models || []).map(m => ({ name: m.name, provider: "ollama", size: m.size_gb, family: m.family })),
+    ...(models.openai_models || []).map(m => ({ name: m.name, provider: "openai", size: null, family: "openai" })),
+  ];
+
+  if (allModels.length === 0) return null;
+
+  const displayName = selectedModel || models.default_model || "auto";
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button onClick={() => setOpen(!open)} style={{
+        display: "flex", alignItems: "center", gap: "5px",
+        padding: "4px 10px", borderRadius: "6px",
+        border: "1px solid rgba(255,255,255,0.1)",
+        background: "rgba(255,255,255,0.04)",
+        color: "#9ca3af", cursor: "pointer",
+        fontSize: "11px", fontWeight: "600",
+        transition: "all 0.15s",
+      }}>
+        <Icon.Model /> {displayName}
+        <span style={{ transform: open ? "rotate(180deg)" : "none", display: "inline-flex", transition: "transform 0.2s" }}>
+          <Icon.ChevronDown />
+        </span>
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute", bottom: "100%", left: 0, marginBottom: "6px",
+          background: "#111827", border: "1px solid rgba(255,255,255,0.1)",
+          borderRadius: "10px", padding: "6px", minWidth: "220px",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          zIndex: 100, maxHeight: "240px", overflowY: "auto",
+        }}>
+          <div style={{ fontSize: "9px", letterSpacing: "1.5px", color: "#4b5563", padding: "4px 8px", marginBottom: "2px" }}>
+            SELECT MODEL
+          </div>
+          {allModels.map(m => (
+            <button
+              key={m.name}
+              onClick={() => { onSelect(m.name); setOpen(false); }}
+              style={{
+                display: "flex", alignItems: "center", gap: "8px", width: "100%",
+                padding: "7px 10px", borderRadius: "6px", border: "none", cursor: "pointer",
+                background: m.name === displayName ? "rgba(99,102,241,0.2)" : "transparent",
+                color: m.name === displayName ? "#818cf8" : "#cbd5e1",
+                fontSize: "12px", textAlign: "left",
+                transition: "background 0.1s",
+              }}
+              onMouseEnter={e => { if (m.name !== displayName) e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+              onMouseLeave={e => { if (m.name !== displayName) e.currentTarget.style.background = "transparent"; }}
+            >
+              {m.provider === "ollama" ? <Icon.Cpu /> : <Icon.Cloud />}
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: "500" }}>{m.name}</div>
+                {m.size && <div style={{ fontSize: "10px", color: "#4b5563" }}>{m.size} GB</div>}
+              </div>
+              {m.name === displayName && (
+                <span style={{ fontSize: "10px", color: "#00e5a0" }}>●</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main App ─────────────────────────────────────────────────
 export default function App() {
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      content: "Hello! I'm your Hybrid RAG assistant.\n\nUpload documents on the left, then ask me anything about them. I'll automatically choose between local Ollama models and OpenAI based on your query — or you can force a provider below.",
-    }
-  ]);
+  // --- Session management ---
+  const [sessions, setSessions] = useState(() => loadSessions());
+  const [currentSessionId, setCurrentSessionId] = useState(() => {
+    const saved = loadCurrentId();
+    const existing = loadSessions();
+    if (saved && existing.find(s => s.id === saved)) return saved;
+    // Create initial session
+    const id = generateId();
+    const initial = { id, title: "New chat", messages: [WELCOME_MSG], createdAt: Date.now(), updatedAt: Date.now() };
+    saveSessions([initial]);
+    saveCurrentId(id);
+    return id;
+  });
+
+  const currentSession = sessions.find(s => s.id === currentSessionId);
+  const messages = currentSession?.messages || [WELCOME_MSG];
+
+  const setMessages = (updater) => {
+    setSessions(prev => {
+      const updated = prev.map(s => {
+        if (s.id !== currentSessionId) return s;
+        const newMsgs = typeof updater === "function" ? updater(s.messages) : updater;
+        // Auto-title from first user message
+        let title = s.title;
+        if (title === "New chat") {
+          const firstUser = newMsgs.find(m => m.role === "user");
+          if (firstUser) title = firstUser.content.slice(0, 50) + (firstUser.content.length > 50 ? "…" : "");
+        }
+        return { ...s, messages: newMsgs, title, updatedAt: Date.now() };
+      });
+      saveSessions(updated);
+      return updated;
+    });
+  };
+
+  const handleNewChat = () => {
+    const id = generateId();
+    const newSession = { id, title: "New chat", messages: [WELCOME_MSG], createdAt: Date.now(), updatedAt: Date.now() };
+    setSessions(prev => {
+      const updated = [...prev, newSession];
+      saveSessions(updated);
+      return updated;
+    });
+    setCurrentSessionId(id);
+    saveCurrentId(id);
+  };
+
+  const handleSwitchSession = (id) => {
+    setCurrentSessionId(id);
+    saveCurrentId(id);
+  };
+
+  // --- Other state ---
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [docs, setDocs] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [status, setStatus] = useState(null);
   const [provider, setProvider] = useState(null); // null = auto
+  const [availableModels, setAvailableModels] = useState({ ollama_models: [], openai_models: [], default_model: "" });
+  const [selectedModel, setSelectedModel] = useState(null); // null = use default
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Fetch system status & docs on mount
+  // Fetch system status, docs, and models on mount
   useEffect(() => {
     fetch(`${API}/api/status`).then(r => r.json()).then(setStatus).catch(() => {});
     fetchDocs();
+    fetch(`${API}/api/models/`).then(r => r.json()).then(setAvailableModels).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -397,38 +633,139 @@ export default function App() {
     } catch {}
   };
 
+  // ── Streaming send handler ──────────────────────────────
   const handleSend = async () => {
     const q = input.trim();
     if (!q || loading) return;
     setInput("");
     const userMsg = { role: "user", content: q };
-    const loadingMsg = { role: "assistant", content: "", loading: true };
-    setMessages(prev => [...prev, userMsg, loadingMsg]);
+    const streamingMsg = { role: "assistant", content: "", loading: true };
+    setMessages(prev => [...prev, userMsg, streamingMsg]);
     setLoading(true);
 
     try {
-      const res = await fetch(`${API}/api/chat/`, {
+      const res = await fetch(`${API}/api/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q, force_provider: provider, top_k: 5 }),
+        body: JSON.stringify({
+          query: q,
+          force_provider: provider,
+          top_k: 5,
+          model: selectedModel,
+        }),
       });
-      const data = await res.json();
+
+      if (!res.ok) {
+        // Fallback to non-streaming endpoint
+        const fallbackRes = await fetch(`${API}/api/chat/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: q, force_provider: provider, top_k: 5, model: selectedModel }),
+        });
+        const data = await fallbackRes.json();
+        setMessages(prev => [
+          ...prev.slice(0, -1),
+          {
+            role: "assistant",
+            content: data.answer || data.detail || "No response.",
+            provider: data.provider,
+            model: data.model,
+            routing_reason: data.routing_reason,
+            sources: data.sources,
+          },
+        ]);
+        return;
+      }
+
+      // Parse SSE stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let meta = {};
+      let streamedContent = "";
+      let sources = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop(); // keep incomplete line
+
+        let eventType = null;
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith("data: ") && eventType) {
+            const data = JSON.parse(line.slice(6));
+
+            if (eventType === "metadata") {
+              meta = data;
+            } else if (eventType === "token") {
+              streamedContent += data.content;
+              // Update the streaming message in place
+              setMessages(prev => [
+                ...prev.slice(0, -1),
+                {
+                  role: "assistant",
+                  content: streamedContent,
+                  loading: true,
+                  provider: meta.provider,
+                  model: meta.model,
+                  routing_reason: meta.routing_reason,
+                },
+              ]);
+            } else if (eventType === "sources") {
+              sources = data;
+            } else if (eventType === "error") {
+              streamedContent += `\n\n⚠️ Error: ${data.detail}`;
+            }
+            eventType = null;
+          }
+        }
+      }
+
+      // Finalize the message (remove loading indicator, add sources)
       setMessages(prev => [
         ...prev.slice(0, -1),
         {
           role: "assistant",
-          content: data.answer || data.detail || "No response.",
-          provider: data.provider,
-          model: data.model,
-          routing_reason: data.routing_reason,
-          sources: data.sources,
-        }
+          content: streamedContent || "No response.",
+          provider: meta.provider,
+          model: meta.model,
+          routing_reason: meta.routing_reason,
+          sources,
+        },
       ]);
+
     } catch (e) {
-      setMessages(prev => [
-        ...prev.slice(0, -1),
-        { role: "assistant", content: "⚠️ Could not reach the backend. Is Docker running?" }
-      ]);
+      console.error("Stream error:", e);
+      // Fallback: try non-streaming
+      try {
+        const fallbackRes = await fetch(`${API}/api/chat/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: q, force_provider: provider, top_k: 5, model: selectedModel }),
+        });
+        const data = await fallbackRes.json();
+        setMessages(prev => [
+          ...prev.slice(0, -1),
+          {
+            role: "assistant",
+            content: data.answer || data.detail || "No response.",
+            provider: data.provider,
+            model: data.model,
+            routing_reason: data.routing_reason,
+            sources: data.sources,
+          },
+        ]);
+      } catch {
+        setMessages(prev => [
+          ...prev.slice(0, -1),
+          { role: "assistant", content: "⚠️ Could not reach the backend. Is Docker running?" },
+        ]);
+      }
     } finally {
       setLoading(false);
       inputRef.current?.focus();
@@ -485,7 +822,16 @@ export default function App() {
         {/* Body */}
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
-          <DocSidebar docs={docs} onUpload={handleUpload} onDelete={handleDelete} uploading={uploading} />
+          <DocSidebar
+            docs={docs}
+            onUpload={handleUpload}
+            onDelete={handleDelete}
+            uploading={uploading}
+            sessions={sessions}
+            currentSessionId={currentSessionId}
+            onNewChat={handleNewChat}
+            onSwitchSession={handleSwitchSession}
+          />
 
           {/* Chat Area */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -503,9 +849,15 @@ export default function App() {
               background: "rgba(0,0,0,0.3)",
               backdropFilter: "blur(8px)",
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "11px", color: "#4b5563" }}>ROUTE:</span>
                 <ProviderSelector value={provider} onChange={setProvider} />
+                <span style={{ fontSize: "11px", color: "#4b5563", marginLeft: "8px" }}>MODEL:</span>
+                <ModelSelector
+                  models={availableModels}
+                  selectedModel={selectedModel}
+                  onSelect={setSelectedModel}
+                />
               </div>
 
               <div style={{
